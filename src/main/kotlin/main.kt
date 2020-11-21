@@ -4,21 +4,21 @@ import java.awt.Color
 import java.awt.image.BufferedImage
 import java.io.File
 import java.nio.file.Files
-import java.nio.file.Path
+import java.nio.file.Paths
 import javax.imageio.ImageIO
 import kotlin.math.pow
 import kotlin.math.sqrt
 
-
+// -in sky.png -out sky-energy.png
 fun main(args: Array<String>) {
 
     val inputFile = args[1]
     val outputFile = args[3]
 
-    val originalImage = ImageIO.read(Files.newInputStream(Path.of(inputFile)))
+    val originalImage = ImageIO.read(Files.newInputStream(Paths.get(inputFile)))
 
-    val width: Int = originalImage.getWidth()
-    val height: Int = originalImage.getHeight()
+    val width: Int = originalImage.width
+    val height: Int = originalImage.height
 
     val energyImage = BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
 
