@@ -2,29 +2,102 @@ package seamcarving
 
 import java.awt.Color
 import java.awt.image.BufferedImage
+import java.io.BufferedWriter
 import java.io.File
+import java.io.FileWriter
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.text.DecimalFormat
+import java.text.NumberFormat
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.*
 import javax.imageio.ImageIO
-import kotlin.math.pow
 import kotlin.math.sqrt
 
-// -in sky.png -out sky-energy.png
 fun main(args: Array<String>) {
 
-    val inputFile = args[1]
-    val outputFile = args[3]
+    if (args.size < 4) {
+        throw IllegalArgumentException("Wrong number of arguments. Required as next: -in sky.png -out sky-seam.png")
+    }
+
+    val (val1, val2, val3, val4) = args
+    val inputFile: String
+    val outputFile: String
+    when {
+        val1 == "-in" && val3 == "-out" -> {
+            inputFile = val2
+            outputFile = val4
+        }
+        val3 == "-in" && val1 == "-out" -> {
+            inputFile = val4
+            outputFile = val2
+        }
+        else -> {
+            throw IllegalArgumentException("Wrong argument order. Required as next: -in sky.png -out sky-seam.png")
+        }
+    }
 
     val originalImage = ImageIO.read(Files.newInputStream(Paths.get(inputFile)))
+    val (maxPixelEnergy, pixelsEnergy) = computeEnergy(originalImage)
+    val minEnergyPath = minEnergyPath(pixelsEnergy)
+    drawSeam(minEnergyPath, originalImage)
+    File(outputFile).let { file -> ImageIO.write(originalImage, file.extension, file) }
+//    debugging(pixelsEnergy, outputFile)
 
-    val width: Int = originalImage.width
-    val height: Int = originalImage.height
+}
 
-    val energyImage = BufferedImage(width, height, BufferedImage.TYPE_INT_RGB)
+data class Pixel(val prev: Pixel?, val x: Int, val y: Int, val energyPath: Double)
 
-    var maxEnergyValue = 0.0
+fun dx2(x: Int, y: Int, image: BufferedImage): Int {
+    return when (x) {
+        0 -> {
+            dx2(x + 1, y, image)
+        }
+        image.width - 1 -> {
+            dx2(x - 1, y, image)
+        }
+        else -> {
+            val left = Color(image.getRGB(x - 1, y))
+            val right = Color(image.getRGB(x + 1, y))
+            val redDiff = left.red - right.red
+            val greenDiff = left.green - right.green
+            val blueDiff = left.blue - right.blue
+            redDiff * redDiff + greenDiff * greenDiff + blueDiff * blueDiff
+        }
+    }
+}
 
-    val energyArr = Array(width) { Array(height) { 0.0 } }
+fun dy2(x: Int, y: Int, image: BufferedImage): Int {
+    return when (y) {
+        0 -> {
+            dy2(x, y + 1, image)
+        }
+        image.height - 1 -> {
+            dy2(x, y - 1, image)
+        }
+        else -> {
+            val top = Color(image.getRGB(x, y - 1))
+            val bottom = Color(image.getRGB(x, y + 1))
+            val redDiff = top.red - bottom.red
+            val greenDiff = top.green - bottom.green
+            val blueDiff = top.blue - bottom.blue
+            redDiff * redDiff + greenDiff * greenDiff + blueDiff * blueDiff
+        }
+    }
+}
+
+fun pixelEnergy(x: Int, y: Int, image: BufferedImage): Double {
+    return sqrt(dx2(x, y, image).toDouble() + dy2(x, y, image).toDouble())
+}
+
+fun computeEnergy(image: BufferedImage): Pair<Double, Array<DoubleArray>> {
+
+    val width = image.width
+    val height = image.height
+    var maxPixelEnergy = 0.0
+
+    val pixelsEnergy = Array(width) { DoubleArray(height) { 0.0 } }
 
     if (width < 3 || height < 3) {
         throw RuntimeException("Too small image")
@@ -32,69 +105,88 @@ fun main(args: Array<String>) {
 
     for (row in 0 until width) {
         for (col in 0 until height) {
-            var xRGBRigth: Int
-            var xRGBLeft: Int
-            var yRGBTop: Int
-            var yRGBBottom: Int
-
-            if (row == 0) {
-                xRGBLeft = originalImage.getRGB(row, col)
-                xRGBRigth = originalImage.getRGB(row + 2, col)
-            } else if (row == width - 1) {
-                xRGBLeft = originalImage.getRGB(row - 2, col)
-                xRGBRigth = originalImage.getRGB(row, col)
-            } else {
-                xRGBLeft = originalImage.getRGB(row - 1, col)
-                xRGBRigth = originalImage.getRGB(row + 1, col)
-            }
-            if (col == 0) {
-                yRGBTop = originalImage.getRGB(row, col)
-                yRGBBottom = originalImage.getRGB(row, col + 2)
-            } else if (col == height - 1) {
-                yRGBTop = originalImage.getRGB(row, col - 2)
-                yRGBBottom = originalImage.getRGB(row, col)
-            } else {
-                yRGBTop = originalImage.getRGB(row, col - 1)
-                yRGBBottom = originalImage.getRGB(row, col + 1)
-            }
-
-            val xColorLeft = Color(xRGBLeft, true)
-            val xColorRight = Color(xRGBRigth, true)
-            val yColorTop = Color(yRGBTop, true)
-            val yColorBottom = Color(yRGBBottom, true)
-
-            val xRed2 = (xColorLeft.red - xColorRight.red).toDouble().pow(2.0)
-            val xGreen2 = (xColorLeft.green - xColorRight.green).toDouble().pow(2.0)
-            val xBlue2 = (xColorLeft.blue - xColorRight.blue).toDouble().pow(2.0)
-
-            val yRed2 = (yColorBottom.red - yColorTop.red).toDouble().pow(2.0)
-            val yGreen2 = (yColorBottom.green - yColorTop.green).toDouble().pow(2.0)
-            val yBlue2 = (yColorBottom.blue - yColorTop.blue).toDouble().pow(2.0)
-
-            val xR2 = xRed2 + xGreen2 + xBlue2
-            val yR2 = yRed2 + yGreen2 + yBlue2
-
-            val energy = sqrt(xR2 + yR2)
-
-            energyArr[row][col] = energy
-            if (maxEnergyValue < energy) {
-                maxEnergyValue = energy
+            val energy = pixelEnergy(row, col, image)
+            pixelsEnergy[row][col] = energy
+            if (maxPixelEnergy < energy) {
+                maxPixelEnergy = energy
             }
         }
     }
+    return maxPixelEnergy to pixelsEnergy
+}
 
-    for (row in 0 until width) {
-        for (col in 0 until height) {
+fun minEnergyPathForEachSpot(doubleMatrix: Array<DoubleArray>): Array<DoubleArray> {
 
-            val energy = energyArr[row][col]
+    val copy = doubleMatrix.map { it.clone() }.toTypedArray()
+    val (width, height) = copy.size to copy.first().size
 
-            val intensity = (255.0 * energy / maxEnergyValue).toInt()
-            val newColor = Color(intensity, intensity, intensity)
-            energyImage.setRGB(row, col, newColor.rgb)
+    for (y in 1 until height) {
+        for (x in 0 until width) {
+            val leftBorder = if (x == 0) x else x - 1
+            val rightBorder = if (x == width - 1) x else x + 1
+            val upper = y - 1
+            val min = listOf(copy[leftBorder][upper], copy[x][upper], copy[rightBorder][upper]).minOrNull()!!
+            copy[x][y] += min
         }
     }
+    return copy
+}
 
-    val file = File(outputFile)
-    ImageIO.write(energyImage, "bmp", file)
+fun normalize(energyMatrix: Array<DoubleArray>, maxEnergyValue: Double): Array<DoubleArray> {
+    energyMatrix.forEach {
+        it.forEachIndexed { y, energy -> it[y] = 255.0 * energy / maxEnergyValue }
+    }
+    return energyMatrix
+}
 
+fun minEnergyPath(doubleMatrix: Array<DoubleArray>): Pixel {
+
+    val copy = doubleMatrix.map { it.clone() }.toTypedArray()
+    val (width, height) = copy.size to copy.first().size
+
+    var matrixRow = Array(width) { Pixel(null, it, 0, doubleMatrix[it][0]) }
+
+    for (y in 1 until height) {
+        matrixRow = Array(width) { x ->
+            val leftBorder = if (x == 0) x else x - 1
+            val rightBorder = if (x == width - 1) x else x + 1
+            val minEngPixel = listOf(matrixRow[leftBorder], matrixRow[x], matrixRow[rightBorder]).minByOrNull { it.energyPath }!!
+            Pixel(minEngPixel, x, y, copy[x][y] + minEngPixel.energyPath)
+        }
+    }
+    return matrixRow.minByOrNull { it.energyPath }!!
+}
+
+fun drawSeam(pixel: Pixel, image: BufferedImage) {
+
+    var curPixel: Pixel? = pixel
+    while (curPixel != null) {
+        image.setRGB(curPixel.x, curPixel.y, Color(255, 0, 0).rgb)
+        curPixel = curPixel.prev
+    }
+}
+
+fun debugging(pixelsEnergy: Array<DoubleArray>, fileName: String) {
+    val dotIndex = fileName.lastIndexOf('.')
+    val resultFileName = fileName.substring(0, dotIndex - 1) + "_debug_${LocalDateTime.now().format(DateTimeFormatter.ISO_DATE_TIME)}.txt"
+    val matrixEnergyFile = File(resultFileName)
+    val writer = BufferedWriter(FileWriter(matrixEnergyFile))
+
+    writer.use {
+        for (y in pixelsEnergy.first().indices) {
+            val rowListEnergy = mutableListOf<String>()
+            for (x in pixelsEnergy.indices) {
+                val energy = pixelsEnergy[x][y]
+                val formatter = NumberFormat.getNumberInstance(Locale.US) as DecimalFormat
+                formatter.applyPattern("0000.0000")
+                val formattedEnergy = formatter.format(energy)
+                print("$formattedEnergy |")
+                rowListEnergy.add(formattedEnergy)
+            }
+            println()
+            val joinToString = rowListEnergy.joinToString(" | ")
+            writer.write(joinToString)
+            writer.newLine()
+        }
+    }
 }
