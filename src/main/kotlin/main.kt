@@ -17,33 +17,58 @@ import kotlin.math.sqrt
 
 fun main(args: Array<String>) {
 
-    if (args.size < 4) {
-        throw IllegalArgumentException("Wrong number of arguments. Required as next: -in sky.png -out sky-seam.png")
+    if (args.size < 8) {
+        throw IllegalArgumentException("Wrong number of arguments. Required as next: -in sky.png -out sky-seam.png -width 20 -height 10")
     }
 
-    val (val1, val2, val3, val4) = args
+    val val1 = args[0]
+    val val2 = args[1]
+    val val3 = args[2]
+    val val4 = args[3]
+    val val5 = args[4]
+    val val6 = args[5]
+    val val7 = args[6]
+    val val8 = args[7]
     val inputFile: String
     val outputFile: String
+    val vSeamNumber: Int
+    val hSeamNumber: Int
     when {
-        val1 == "-in" && val3 == "-out" -> {
+        val1 == "-in" && val3 == "-out" && val5 == "-width" && val7 == "-height" -> {
             inputFile = val2
             outputFile = val4
+            vSeamNumber = val6.toInt()
+            hSeamNumber = val8.toInt()
         }
-        val3 == "-in" && val1 == "-out" -> {
+        val3 == "-in" && val1 == "-out" && val5 == "-height" && val7 == "-width"  -> {
             inputFile = val4
             outputFile = val2
+            vSeamNumber = val8.toInt()
+            hSeamNumber = val6.toInt()
         }
         else -> {
-            throw IllegalArgumentException("Wrong argument order. Required as next: -in sky.png -out sky-seam.png")
+            throw IllegalArgumentException("Wrong argument order. Required as next: -in sky.png -out sky-seam.png -width 20 -height 10")
         }
     }
 
     val originalImage = ImageIO.read(Files.newInputStream(Paths.get(inputFile)))
-    val (maxPixelEnergy, pixelsEnergy) = computeEnergy(originalImage)
-    val minEnergyPath = minEnergyHorizontalPath(pixelsEnergy)
-    drawSeam(minEnergyPath, originalImage)
-    File(outputFile).let { file -> ImageIO.write(originalImage, file.extension, file) }
-//    debugging(pixelsEnergy, outputFile)
+
+    var resizingImage = originalImage
+
+    for (i in 0 until vSeamNumber) {
+        val (maxPixelEnergy, pixelsEnergy) = computeEnergy(resizingImage)
+        val minEnergyPath = minEnergyPath(pixelsEnergy)
+        resizingImage = compressVertical(minEnergyPath, resizingImage)
+    }
+
+    for (i in 0 until hSeamNumber) {
+        val (maxPixelEnergy, pixelsEnergy) = computeEnergy(resizingImage)
+        val minEnergyPath = minEnergyHorizontalPath(pixelsEnergy)
+        resizingImage = compressHorizontal(minEnergyPath, resizingImage)
+    }
+
+    File(outputFile).let { file -> ImageIO.write(resizingImage, file.extension, file) }
+
 
 }
 
@@ -165,6 +190,50 @@ fun drawSeam(pixel: Pixel, image: BufferedImage) {
         image.setRGB(curPixel.x, curPixel.y, Color(255, 0, 0).rgb)
         curPixel = curPixel.prev
     }
+}
+
+fun compressVertical(pixel: Pixel, image: BufferedImage) : BufferedImage {
+
+    val seamCoords = mutableMapOf<Int, Int>()
+    var curPixel: Pixel? = pixel
+    while (curPixel != null) {
+        seamCoords.put(curPixel.y,  curPixel.x)
+        curPixel = curPixel.prev
+    }
+
+    val unseamedImage = BufferedImage(image.width - 1, image.height, BufferedImage.TYPE_INT_RGB)
+    for (x in 0 until image.width) {
+        for (y in 0 until image.height) {
+            if (x < seamCoords[y]!!) {
+                unseamedImage.setRGB(x, y, image.getRGB(x, y))
+            } else if (x > seamCoords[y]!!) {
+                unseamedImage.setRGB(x - 1, y, image.getRGB(x, y))
+            }
+        }
+    }
+    return unseamedImage
+}
+
+fun compressHorizontal(pixel: Pixel, image: BufferedImage) : BufferedImage {
+
+    val seamCoords = mutableMapOf<Int, Int>()
+    var curPixel: Pixel? = pixel
+    while (curPixel != null) {
+        seamCoords.put(curPixel.x,  curPixel.y)
+        curPixel = curPixel.prev
+    }
+
+    val unseamedImage = BufferedImage(image.width, image.height - 1, BufferedImage.TYPE_INT_RGB)
+    for (x in 0 until image.width) {
+        for (y in 0 until image.height) {
+            if (y < seamCoords[x]!!) {
+                unseamedImage.setRGB(x, y, image.getRGB(x, y))
+            } else if (y > seamCoords[x]!!) {
+                unseamedImage.setRGB(x, y - 1, image.getRGB(x, y))
+            }
+        }
+    }
+    return unseamedImage
 }
 
 fun debugging(pixelsEnergy: Array<DoubleArray>, fileName: String) {
