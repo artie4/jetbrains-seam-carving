@@ -40,7 +40,7 @@ fun main(args: Array<String>) {
 
     val originalImage = ImageIO.read(Files.newInputStream(Paths.get(inputFile)))
     val (maxPixelEnergy, pixelsEnergy) = computeEnergy(originalImage)
-    val minEnergyPath = minEnergyPath(pixelsEnergy)
+    val minEnergyPath = minEnergyHorizontalPath(pixelsEnergy)
     drawSeam(minEnergyPath, originalImage)
     File(outputFile).let { file -> ImageIO.write(originalImage, file.extension, file) }
 //    debugging(pixelsEnergy, outputFile)
@@ -115,23 +115,6 @@ fun computeEnergy(image: BufferedImage): Pair<Double, Array<DoubleArray>> {
     return maxPixelEnergy to pixelsEnergy
 }
 
-fun minEnergyPathForEachSpot(doubleMatrix: Array<DoubleArray>): Array<DoubleArray> {
-
-    val copy = doubleMatrix.map { it.clone() }.toTypedArray()
-    val (width, height) = copy.size to copy.first().size
-
-    for (y in 1 until height) {
-        for (x in 0 until width) {
-            val leftBorder = if (x == 0) x else x - 1
-            val rightBorder = if (x == width - 1) x else x + 1
-            val upper = y - 1
-            val min = listOf(copy[leftBorder][upper], copy[x][upper], copy[rightBorder][upper]).minOrNull()!!
-            copy[x][y] += min
-        }
-    }
-    return copy
-}
-
 fun normalize(energyMatrix: Array<DoubleArray>, maxEnergyValue: Double): Array<DoubleArray> {
     energyMatrix.forEach {
         it.forEachIndexed { y, energy -> it[y] = 255.0 * energy / maxEnergyValue }
@@ -155,6 +138,24 @@ fun minEnergyPath(doubleMatrix: Array<DoubleArray>): Pixel {
         }
     }
     return matrixRow.minByOrNull { it.energyPath }!!
+}
+
+fun minEnergyHorizontalPath(doubleMatrix: Array<DoubleArray>): Pixel {
+
+    val copy = doubleMatrix.map { it.clone() }.toTypedArray()
+    val (width, height) = copy.size to copy.first().size
+
+    var matrixColumn = Array(height) { Pixel(null, 0, it, doubleMatrix[0][it]) }
+
+    for (x in 1 until width) {
+        matrixColumn = Array(height) { y ->
+            val upBorder = if (y == 0) y else y - 1
+            val bottomBorder = if (y == height - 1) y else y + 1
+            val minEngPixel = listOf(matrixColumn[upBorder], matrixColumn[y], matrixColumn[bottomBorder]).minByOrNull { it.energyPath }!!
+            Pixel(minEngPixel, x, y, copy[x][y] + minEngPixel.energyPath)
+        }
+    }
+    return matrixColumn.minByOrNull { it.energyPath }!!
 }
 
 fun drawSeam(pixel: Pixel, image: BufferedImage) {
